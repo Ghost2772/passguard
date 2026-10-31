@@ -27,6 +27,9 @@ services:
 
   vault:
     image: hashicorp/vault:2.2.1
+    # The wrapper copies root-owned private keys; the official entrypoint
+    # then drops privileges and runs the server as the vault user.
+    user: "0:0"
     entrypoint: ["/bin/sh", "/bootstrap/start-vault.sh"]
     cap_add: [IPC_LOCK]
     environment:
