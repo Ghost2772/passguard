@@ -31,11 +31,11 @@ services:
     # then drops privileges and runs the server as the vault user.
     user: "0:0"
     entrypoint: ["/bin/sh", "/bootstrap/start-vault.sh"]
-    cap_add: [IPC_LOCK]
     environment:
       VAULT_ADDR: https://127.0.0.1:8200
       VAULT_CACERT: /run/secrets/local_ca
       SKIP_CHOWN: "1"
+      SKIP_SETCAP: "1"
     ports:
       - "127.0.0.1:8200:8200"
     secrets:
@@ -107,6 +107,11 @@ services:
     volumes:
       - ./.local:/state
       - ./reports:/reports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault:
+        condition: service_healthy
     networks: [backend]
 
 secrets:
