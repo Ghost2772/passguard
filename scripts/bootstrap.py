@@ -111,15 +111,18 @@ def bootstrap() -> None:
             raise RuntimeError("Первоначальная настройка не завершена, а начальный токен отсутствует.")
 
         audits = api(client, "GET", "sys/audit", token=token)
+        audits = audits.get("data", audits)
         if "file/" not in audits:
             api(client, "PUT", "sys/audit/file", token=token, payload={
                 "type": "file",
                 "options": {"file_path": "/vault/audit/audit.jsonl", "log_raw": "false"},
             })
         mounts = api(client, "GET", "sys/mounts", token=token)
+        mounts = mounts.get("data", mounts)
         if "database/" not in mounts:
             api(client, "POST", "sys/mounts/database", token=token, payload={"type": "database"})
         auth = api(client, "GET", "sys/auth", token=token)
+        auth = auth.get("data", auth)
         if "approle/" not in auth:
             api(client, "POST", "sys/auth/approle", token=token, payload={"type": "approle"})
 

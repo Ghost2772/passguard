@@ -6,6 +6,7 @@ import pytest
 
 from scripts.bootstrap import finalize_root_revocation
 from scripts import verify_rotation
+from scripts.common import unseal, wait_for_active_vault
 from passguard.vault_client import VaultUnavailable
 
 
@@ -43,3 +44,52 @@ def test_failed_rotation_verification_replaces_an_old_success_report(tmp_path, m
     assert report["status"] == "failed"
     assert "unit-sensitive-response" not in path.read_text()
     assert "unit-sensitive-response" not in capsys.readouterr().err
+
+
+def test_unseal_waits_for_raft_to_be_active(monkeypatch):
+    sleep = Mock()
+    monkeypatch.setattr("scripts.common.time.sleep", sleep)
+    paths = []
+    statuses = iter([429, 200])
+
+    def handler(request):
+        paths.append(request.url.path)
+        if request.url.path.endswith("seal-status"):
+            return httpx.Response(200, json={"sealed": True})
+        if request.url.path.endswith("/unseal"):
+            return httpx.Response(200, json={"sealed": False})
+        return httpx.Response(next(statuses), json={"sealed": False})
+
+    with httpx.Client(base_url="https://vault:8200", transport=httpx.MockTransport(handler)) as client:
+        unseal(client, {"keys_base64": ["unit-recovery"]})
+    assert paths == ["/v1/sys/seal-status", "/v1/sys/unseal", "/v1/sys/health", "/v1/sys/health"]
+    sleep.assert_called_once_with(1)
+
+
+def test_already_unsealed_server_still_requires_an_active_health_check(monkeypatch):
+    monkeypatch.setattr("scripts.common.time.sleep", Mock())
+    paths = []
+
+    def handler(request):
+        assert request.method == "GET"
+        paths.append(request.url.path)
+        return httpx.Response(200, json={"sealed": False})
+
+    with httpx.Client(base_url="https://vault:8200", transport=httpx.MockTransport(handler)) as client:
+        unseal(client, {"keys_base64": ["unit-recovery"]})
+    assert paths == ["/v1/sys/seal-status", "/v1/sys/health"]
+
+
+def test_active_vault_wait_is_bounded_and_does_not_expose_response_bodies(monkeypatch):
+    monkeypatch.setattr("scripts.common.time.sleep", Mock())
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(503, text="unit-sensitive-health-response")
+
+    with httpx.Client(base_url="https://vault:8200", transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(RuntimeError) as error:
+            wait_for_active_vault(client, attempts=2)
+    assert len(calls) == 2
+    assert "unit-sensitive" not in str(error.value)

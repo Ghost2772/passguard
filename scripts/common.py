@@ -77,9 +77,24 @@ def load_recovery() -> dict[str, Any]:
     return json.loads(path.read_text())
 
 
+def wait_for_active_vault(client: httpx.Client, *, attempts: int = 45) -> None:
+    # Raft leader election and post-unseal setup continue after /sys/unseal
+    # returns sealed=false. Only health=200 confirms an active server.
+    for attempt in range(attempts):
+        try:
+            if client.get("/v1/sys/health").status_code == 200:
+                return
+        except httpx.HTTPError:
+            pass
+        if attempt + 1 < attempts:
+            time.sleep(1)
+    raise RuntimeError("Vault разблокирован, но ещё не готов к операциям. Повтори команду позже.")
+
+
 def unseal(client: httpx.Client, recovery: dict[str, Any]) -> None:
     status = api(client, "GET", "sys/seal-status")
     if status["sealed"]:
         result = api(client, "POST", "sys/unseal", payload={"key": recovery["keys_base64"][0]})
         if result["sealed"]:
             raise RuntimeError("Не удалось разблокировать Vault")
+    wait_for_active_vault(client)
