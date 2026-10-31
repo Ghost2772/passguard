@@ -1,0 +1,58 @@
+name: PassGuard checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest
+
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build tools and demo
+        run: docker compose --profile ops build
+      - name: Generate local TLS material
+        run: docker compose run --rm --no-deps tools python -m scripts.prepare
+      - name: Start PostgreSQL and Vault
+        run: docker compose up -d postgres vault
+      - name: Configure Vault and database roles
+        run: docker compose run --rm tools python -m scripts.bootstrap
+      - name: Start demo application
+        run: docker compose up -d --wait demo
+      - name: Prove credential rotation and permission restrictions
+        run: docker compose run --rm tools python -m scripts.verify_rotation
+      - name: Restart Vault with its existing storage
+        run: docker compose restart vault
+      - name: Unseal Vault and repeat the experiment
+        run: |
+          docker compose run --rm tools python -m scripts.unseal
+          docker compose run --rm tools python -m scripts.verify_rotation
+      - name: Show sanitized service logs on failure
+        if: failure()
+        run: docker compose logs --tail 100 postgres vault demo
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rotation-report
+          path: reports/rotation.json
+          if-no-files-found: ignore
+      - name: Remove this disposable CI environment
+        if: always()
+        run: docker compose --profile ops down --volumes

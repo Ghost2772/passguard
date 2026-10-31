@@ -1,0 +1,130 @@
+name: passguard
+
+services:
+  postgres:
+    image: postgres:18
+    entrypoint: ["/bin/sh", "/bootstrap/start-postgres.sh"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: coursework
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_bootstrap_password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    secrets:
+      - postgres_bootstrap_password
+      - postgres_tls_cert
+      - postgres_tls_key
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./infra/postgres/start.sh:/bootstrap/start-postgres.sh:ro
+      - ./infra/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d coursework"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [backend]
+    restart: unless-stopped
+
+  vault:
+    image: hashicorp/vault:2.2.1
+    entrypoint: ["/bin/sh", "/bootstrap/start-vault.sh"]
+    cap_add: [IPC_LOCK]
+    environment:
+      VAULT_ADDR: https://127.0.0.1:8200
+      VAULT_CACERT: /run/secrets/local_ca
+      SKIP_CHOWN: "1"
+    ports:
+      - "127.0.0.1:8200:8200"
+    secrets:
+      - vault_tls_cert
+      - vault_tls_key
+      - local_ca
+    volumes:
+      - vault_data:/vault/data
+      - vault_audit:/vault/audit
+      - ./infra/vault/vault.hcl:/vault/config/vault.hcl:ro
+      - ./infra/vault/start.sh:/bootstrap/start-vault.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "vault status >/dev/null 2>&1; code=$$?; [ $$code -eq 0 ] || [ $$code -eq 2 ]"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [backend]
+    restart: unless-stopped
+
+  demo:
+    build:
+      context: .
+      target: demo
+    environment:
+      VAULT_ADDR: https://vault:8200
+      VAULT_CACERT: /run/certs/ca.crt
+      VAULT_IDENTITY_DIR: /run/identity
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: coursework
+      DB_SSLROOTCERT: /run/certs/ca.crt
+    volumes:
+      - ./.local/identities/demo:/run/identity:ro
+      - ./.local/pki/ca.crt:/run/certs/ca.crt:ro
+    ports:
+      - "127.0.0.1:8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      vault:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/ready', timeout=10)"]
+      interval: 5s
+      timeout: 12s
+      retries: 15
+    networks: [backend]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    restart: unless-stopped
+
+  tools:
+    build:
+      context: .
+      target: tools
+    profiles: [ops]
+    environment:
+      STATE_DIR: /state
+      REPORT_DIR: /reports
+      VAULT_ADDR: https://vault:8200
+      VAULT_CACERT: /state/pki/ca.crt
+      VAULT_IDENTITY_DIR: /state/identities/demo
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: coursework
+      DB_SSLROOTCERT: /state/pki/ca.crt
+      DEMO_URL: http://demo:8001
+    volumes:
+      - ./.local:/state
+      - ./reports:/reports
+    networks: [backend]
+
+secrets:
+  postgres_bootstrap_password:
+    file: ./.local/bootstrap/postgres_password
+  postgres_tls_cert:
+    file: ./.local/pki/postgres.crt
+  postgres_tls_key:
+    file: ./.local/bootstrap/postgres.key
+  vault_tls_cert:
+    file: ./.local/pki/vault.crt
+  vault_tls_key:
+    file: ./.local/bootstrap/vault.key
+  local_ca:
+    file: ./.local/pki/ca.crt
+
+volumes:
+  postgres_data:
+  vault_data:
+  vault_audit:
+
+networks:
+  backend:
+    internal: true
