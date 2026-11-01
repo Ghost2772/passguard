@@ -1,5 +1,12 @@
 FROM ghcr.io/gitleaks/gitleaks:v8.30.1 AS gitleaks
 
+FROM node:24-alpine AS panel
+WORKDIR /panel
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend ./
+RUN npm run build
+
 FROM python:3.12-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -20,6 +27,7 @@ EXPOSE 8001
 CMD ["python", "-m", "uvicorn", "passguard.main:app", "--host", "0.0.0.0", "--port", "8001", "--no-server-header"]
 
 FROM base AS control
+COPY --from=panel /panel/dist /workspace/panel
 USER 10002:10002
 EXPOSE 8000
 CMD ["python", "-m", "uvicorn", "passguard.control.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-server-header"]

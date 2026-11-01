@@ -23,7 +23,7 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Build services and isolated scanner
@@ -68,6 +68,23 @@ jobs:
           docker compose run --rm tools python -m scripts.unseal
           docker compose run --rm tools python -m scripts.verify_control --check-last-admin
           docker compose run --rm tools python -m scripts.verify_scanner
+      - name: Verify installed panel and same-origin API
+        run: docker compose run --rm tools python -m scripts.verify_panel
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install browser test dependencies
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Test real panel workflows in Chromium
+        working-directory: frontend
+        env:
+          PASSGUARD_VISUAL_QA: '1'
+        run: npm run test:e2e
       - name: Check scanner isolation and input cleanup
         run: |
           docker compose exec -T scanner python - <<'PY'
@@ -99,3 +116,20 @@ jobs:
       - name: Remove this disposable CI environment
         if: always()
         run: docker compose --profile ops down --volumes
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run build

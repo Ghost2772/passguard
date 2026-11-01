@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import os
 from threading import Lock
+from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -18,13 +19,14 @@ from passguard.vault_client import VaultClient, VaultDenied, VaultError, VaultUn
 from passguard.control.models import AuthView, ChangePasswordRequest, CreateUserRequest, LoginRequest, RotationRequest, UpdateUserRequest, UserListView, UserView
 from passguard.control.models import ScanListView, ScanReportView
 from passguard.control.repository import ControlError, ControlRepository, Identity
+from passguard.control.panel import mount_panel
 from passguard.control.security import COOKIE_NAME, COOKIE_PATH, SecuritySettings, valid_csrf
 from passguard.scanner.client import ScannerClient
 from passguard.scanner.errors import ScanError, failure
 from passguard.scanner.upload import read_archive
 
 
-def create_app(repository=None, vault=None, security: SecuritySettings | None = None, probe=None, scanner=None) -> FastAPI:
+def create_app(repository=None, vault=None, security: SecuritySettings | None = None, probe=None, scanner=None, panel_dir: Path | None = None) -> FastAPI:
     security = security or SecuritySettings.from_env()
     scan_lock = Lock()
 
@@ -55,7 +57,7 @@ def create_app(repository=None, vault=None, security: SecuritySettings | None = 
                 if scanner is None:
                     app.state.scanner.close()
 
-    app = FastAPI(title="PassGuard — управляющий API", version="0.3.0", lifespan=lifespan)
+    app = FastAPI(title="PassGuard — управляющий API", version="0.4.0", lifespan=lifespan)
 
     @app.middleware("http")
     async def browser_protection(request: Request, call_next):
@@ -236,6 +238,7 @@ def create_app(repository=None, vault=None, security: SecuritySettings | None = 
     def scan_report(scan_id: UUID, request: Request, _: Annotated[Identity, Depends(any_user)]):
         return request.app.state.repository.scan_report(scan_id)
 
+    mount_panel(app, panel_dir)
     return app
 
 

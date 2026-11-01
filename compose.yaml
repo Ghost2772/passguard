@@ -105,6 +105,7 @@ services:
       DEMO_URL: http://demo:8001
       SCANNER_URL: http://scanner:8002
       COOKIE_SECURE: "false"
+      CONTROL_ALLOWED_ORIGINS: ${CONTROL_ALLOWED_ORIGINS:-http://127.0.0.1:8000,http://localhost:8000}
     volumes:
       - ./.local/identities/control:/run/identity:ro
       - ./.local/pki/ca.crt:/run/certs/ca.crt:ro

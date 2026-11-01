@@ -8,3 +8,7 @@ __pycache__
 reports
 tests
 docs
+**/node_modules
+**/dist
+**/test-results
+**/playwright-report
