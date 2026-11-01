@@ -14,7 +14,8 @@ def is_authentication_error(error: psycopg.Error) -> bool:
     return error.sqlstate == "28P01" or "password authentication failed" in str(error)
 
 
-def connect(settings: Settings, credentials: DatabaseCredentials, *, readonly: bool = True):
+def connect(settings: Settings, credentials: DatabaseCredentials, *, readonly: bool = True,
+            application_name: str | None = None):
     return psycopg.connect(
         host=settings.db_host,
         port=settings.db_port,
@@ -24,7 +25,7 @@ def connect(settings: Settings, credentials: DatabaseCredentials, *, readonly: b
         sslmode="verify-full",
         sslrootcert=str(settings.db_ca_file),
         connect_timeout=5,
-        application_name="passguard-demo" if readonly else "passguard-operator",
+        application_name=application_name or ("passguard-demo" if readonly else "passguard-operator"),
         options="-c default_transaction_read_only=on" if readonly else "",
         row_factory=dict_row,
     )

@@ -3,3 +3,4 @@ uvicorn==0.54.0
 httpx==0.28.1
 psycopg[binary]==3.3.6
 cryptography==50.0.2
+pwdlib[argon2]==0.3.1

@@ -73,7 +73,7 @@ def api(
 def load_recovery() -> dict[str, Any]:
     path = state_dir() / "operator/vault-init.json"
     if not path.is_file():
-        raise RuntimeError("Нет локальной записи восстановления Vault. Нужен первоначальный bootstrap.")
+        raise RuntimeError("Не найдена .local/operator/vault-init.json. Нужна запись восстановления именно этой установки Vault; повторная инициализация ключ не восстановит.")
     return json.loads(path.read_text())
 
 

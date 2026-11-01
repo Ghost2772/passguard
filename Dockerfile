@@ -16,3 +16,8 @@ FROM base AS demo
 USER 10001:10001
 EXPOSE 8001
 CMD ["python", "-m", "uvicorn", "passguard.main:app", "--host", "0.0.0.0", "--port", "8001", "--no-server-header"]
+
+FROM base AS control
+USER 10002:10002
+EXPOSE 8000
+CMD ["python", "-m", "uvicorn", "passguard.control.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-server-header"]

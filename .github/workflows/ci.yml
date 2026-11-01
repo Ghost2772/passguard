@@ -46,14 +46,29 @@ jobs:
         run: |
           docker compose run --rm tools python -m scripts.unseal
           docker compose run --rm tools python -m scripts.verify_rotation
+      - name: Upgrade the existing installation with the control API
+        run: |
+          docker compose run --rm tools python -m scripts.setup_control
+          docker compose run --rm tools python -m scripts.setup_control
+      - name: Start and check the control API from the Docker host
+        run: |
+          docker compose up -d --wait control
+          curl --fail --silent --show-error --noproxy "*" --max-time 20 http://127.0.0.1:8000/ready
+      - name: Verify sessions, roles, audit and API-driven rotation
+        run: docker compose run --rm tools python -m scripts.verify_control --check-last-admin
+      - name: Verify control API after Vault restart
+        run: |
+          docker compose restart vault
+          docker compose run --rm tools python -m scripts.unseal
+          docker compose run --rm tools python -m scripts.verify_control --check-last-admin
       - name: Show sanitized service logs on failure
         if: failure()
-        run: docker compose logs --tail 100 postgres vault demo
+        run: docker compose logs --tail 100 postgres vault demo control
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: rotation-report
-          path: reports/rotation.json
+          path: reports/*.json
           if-no-files-found: ignore
       - name: Remove this disposable CI environment
         if: always()

@@ -1,5 +1,8 @@
 ui = true
 disable_mlock = true
+# Local maintenance uses the stored Shamir share to authorize a temporary
+# provisioning token. The HTTP application never receives this share.
+enable_unauthenticated_access = ["generate-root"]
 api_addr = "https://vault:8200"
 cluster_addr = "https://vault:8201"
 

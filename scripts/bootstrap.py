@@ -61,7 +61,7 @@ def create_identity(client, token: str, name: str) -> None:
     directory = state_dir() / "identities" / name
     directory.mkdir(parents=True, exist_ok=True)
     directory.chmod(0o700)
-    owner = 10001 if name == "demo" else None
+    owner = {"demo": 10001, "control": 10002}.get(name)
     write_private(directory / "role_id", role_id, uid=owner)
     write_private(directory / "secret_id", secret_id, uid=owner)
     if owner is not None and hasattr(os, "geteuid") and os.geteuid() == 0:

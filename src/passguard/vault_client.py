@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
+import re
 import ssl
 import threading
 import time
@@ -109,8 +110,14 @@ class VaultClient:
                     raise VaultUnavailable("Vault response is invalid") from None
         raise VaultUnavailable("Vault operation failed")
 
-    def database_credentials(self) -> DatabaseCredentials:
-        payload = self.request("GET", "database/static-creds/demo-db")
+    @staticmethod
+    def _role_name(name: str) -> str:
+        if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", name):
+            raise ValueError("Invalid Vault database role name")
+        return name
+
+    def database_credentials(self, role: str = "demo-db") -> DatabaseCredentials:
+        payload = self.request("GET", "database/static-creds/" + self._role_name(role))
         try:
             username = payload["data"]["username"]
             password = payload["data"]["password"]
@@ -122,8 +129,17 @@ class VaultClient:
         except (KeyError, TypeError, ValueError):
             raise VaultUnavailable("Vault credentials response is invalid") from None
 
-    def rotate_database_password(self) -> None:
-        self.request("POST", "database/rotate-role/demo-db")
+    def rotate_database_password(self, role: str = "demo-db") -> None:
+        self.request("POST", "database/rotate-role/" + self._role_name(role))
+
+    def database_role(self, role: str = "demo-db") -> dict[str, Any]:
+        payload = self.request("GET", "database/static-roles/" + self._role_name(role))
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            raise VaultUnavailable("Vault role response is invalid")
+        # Explicit allowlist; no credentials or raw connection configuration.
+        return {"id": role, "type": "database-password", "username": data.get("username"),
+                "rotation_period_seconds": data.get("rotation_period")}
 
     def close(self) -> None:
         self._http.close()
