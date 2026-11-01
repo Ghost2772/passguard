@@ -1,0 +1,1 @@
+{{- range . }}{{ dict "file" (base .File) "rule_id" .RuleID "line" .StartLine "end_line" .EndLine | toJson }}{{ "\n" }}{{ end -}}

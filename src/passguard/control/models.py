@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
+from passguard.scanner.models import MAX_FINDINGS, ScanResult
+
 
 class Role(str, Enum):
     admin = "admin"
@@ -99,3 +101,25 @@ class RotationReason(str, Enum):
 class RotationRequest(StrictModel):
     idempotency_key: UUID
     reason: RotationReason = RotationReason.manual_test
+
+
+class ScanSummaryView(BaseModel):
+    id: UUID
+    actor_id: UUID
+    created_at: datetime
+    findings_count: int = Field(ge=0, le=MAX_FINDINGS)
+    engine: str
+    engine_version: str
+    files_scanned: int
+
+
+class ScanListView(BaseModel):
+    items: list[ScanSummaryView]
+
+
+class ScanReportView(BaseModel):
+    id: UUID
+    actor_id: UUID
+    created_at: datetime
+    findings_count: int = Field(ge=0, le=MAX_FINDINGS)
+    result: ScanResult

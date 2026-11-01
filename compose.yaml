@@ -103,6 +103,7 @@ services:
       DB_NAME: passguard_control
       DB_SSLROOTCERT: /run/certs/ca.crt
       DEMO_URL: http://demo:8001
+      SCANNER_URL: http://scanner:8002
       COOKIE_SECURE: "false"
     volumes:
       - ./.local/identities/control:/run/identity:ro
@@ -110,6 +111,8 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
+      scanner:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       vault:
@@ -119,10 +122,31 @@ services:
       interval: 5s
       timeout: 12s
       retries: 15
-    networks: [web, backend]
+    networks: [web, backend, scanning]
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     read_only: true
+    restart: unless-stopped
+
+  scanner:
+    build:
+      context: .
+      target: scanner
+    # No host port, secret mount, Docker socket or database/Vault network.
+    networks: [scanning]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,uid=10003,gid=10003,mode=700
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=5)"]
+      interval: 5s
+      timeout: 6s
+      retries: 15
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 128
     restart: unless-stopped
 
   tools:
@@ -175,4 +199,6 @@ networks:
   web:
     driver: bridge
   backend:
+    internal: true
+  scanning:
     internal: true

@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Build tools and demo
+      - name: Build services and isolated scanner
         run: docker compose --profile ops build
       - name: Generate local TLS material
         run: docker compose run --rm --no-deps tools python -m scripts.prepare
@@ -50,20 +50,46 @@ jobs:
         run: |
           docker compose run --rm tools python -m scripts.setup_control
           docker compose run --rm tools python -m scripts.setup_control
+      - name: Upgrade the existing control database with immutable scanner reports
+        run: |
+          docker compose run --rm tools python -m scripts.setup_scanner
+          docker compose run --rm tools python -m scripts.setup_scanner
       - name: Start and check the control API from the Docker host
         run: |
           docker compose up -d --wait control
           curl --fail --silent --show-error --noproxy "*" --max-time 20 http://127.0.0.1:8000/ready
       - name: Verify sessions, roles, audit and API-driven rotation
         run: docker compose run --rm tools python -m scripts.verify_control --check-last-admin
+      - name: Verify real Gitleaks detection and safe reports
+        run: docker compose run --rm tools python -m scripts.verify_scanner
       - name: Verify control API after Vault restart
         run: |
           docker compose restart vault
           docker compose run --rm tools python -m scripts.unseal
           docker compose run --rm tools python -m scripts.verify_control --check-last-admin
+          docker compose run --rm tools python -m scripts.verify_scanner
+      - name: Check scanner isolation and input cleanup
+        run: |
+          docker compose exec -T scanner python - <<'PY'
+          import os
+          from pathlib import Path
+          import socket
+          import subprocess
+          assert '8.30.1' in subprocess.check_output(['/usr/local/bin/gitleaks', 'version'], text=True)
+          assert not Path('/run/identity').exists() and not Path('/state').exists()
+          assert 'VAULT_ADDR' not in os.environ and 'DB_HOST' not in os.environ
+          assert not list(Path('/tmp').glob('passguard-scan-*'))
+          for host in ('vault', 'postgres'):
+              try:
+                  socket.getaddrinfo(host, None)
+              except socket.gaierror:
+                  continue
+              raise AssertionError('Scanner can resolve a protected backend service')
+          print('Scanner version, network isolation and source cleanup verified')
+          PY
       - name: Show sanitized service logs on failure
         if: failure()
-        run: docker compose logs --tail 100 postgres vault demo control
+        run: docker compose logs --tail 100 postgres vault demo control scanner
       - uses: actions/upload-artifact@v4
         if: always()
         with:

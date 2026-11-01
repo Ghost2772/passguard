@@ -1,0 +1,17 @@
+title = "PassGuard source snapshot rules"
+
+[extend]
+useDefault = true
+
+# Educational extension for literal passwords, including low-entropy values.
+# These are suspected findings, not proof of working credentials.
+[[rules]]
+id = "passguard-hardcoded-password"
+description = "Literal password assignment"
+regex = '''(?i)(?:password|passwd|pwd|db_pass|пароль)[\w.-]*["']?[\t ]*[=:][\t ]*["']([^"'\r\n]{8,128})["']'''
+secretGroup = 1
+keywords = ["password", "passwd", "pwd", "db_pass", "пароль"]
+
+  [[rules.allowlists]]
+  regexTarget = "secret"
+  regexes = ['''(?i)^(?:\$\{.*\}|<[^>]+>|\*+|REDACTED|change[_-]?me|your[_-].*)$''']

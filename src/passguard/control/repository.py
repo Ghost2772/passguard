@@ -10,6 +10,7 @@ from passguard.config import Settings
 from passguard.database import connect, DatabaseUnavailable, is_authentication_error
 from passguard.vault_client import VaultClient
 from passguard.control.security import DUMMY_HASH, hash_password, new_token, token_digest, verify_password
+from passguard.scanner.models import ScanResult
 
 
 class ControlError(Exception):
@@ -232,4 +233,33 @@ class ControlRepository:
             row = connection.execute("SELECT * FROM control.operations WHERE id=%s", (operation_id,)).fetchone()
             if not row:
                 raise ControlError(404, "operation_not_found", "Операция не найдена")
+            return row
+
+    def save_scan(self, actor: Identity, result: ScanResult) -> dict:
+        # Revalidate before SQL; no arbitrary detector dictionaries or snippets.
+        safe = ScanResult.model_validate(result.model_dump()).model_dump()
+        with self.connection() as connection:
+            row = connection.execute(
+                "INSERT INTO control.scans (id,actor_id,findings_count,result) VALUES (%s,%s,%s,%s) RETURNING *",
+                (uuid4(), actor.user["id"], len(safe["findings"]), Jsonb(safe)),
+            ).fetchone()
+            self._audit(connection, actor.user, "scans.create", "success",
+                        {"scan_id": str(row["id"]), "findings_count": len(safe["findings"]),
+                         "files_scanned": safe["files_scanned"], "skipped_count": len(safe["skipped_files"])})
+            return row
+
+    def scans(self, limit: int, offset: int) -> list[dict]:
+        with self.connection() as connection:
+            return connection.execute(
+                "SELECT id,actor_id,created_at,findings_count,result->>'engine' AS engine, "
+                "result->>'engine_version' AS engine_version,(result->>'files_scanned')::int AS files_scanned "
+                "FROM control.scans ORDER BY created_at DESC,id LIMIT %s OFFSET %s", (limit, offset)
+            ).fetchall()
+
+    def scan_report(self, scan_id: UUID) -> dict:
+        with self.connection() as connection:
+            row = connection.execute("SELECT * FROM control.scans WHERE id=%s", (scan_id,)).fetchone()
+            if row is None:
+                raise ControlError(404, "scan_not_found", "Отчёт не найден")
+            row["result"] = ScanResult.model_validate(row["result"]).model_dump()
             return row

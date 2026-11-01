@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 import os
+from threading import Lock
 from typing import Annotated
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -9,17 +10,23 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 import httpx
+from starlette.concurrency import run_in_threadpool
 
 from passguard.config import Settings
 from passguard.database import DatabaseUnavailable
 from passguard.vault_client import VaultClient, VaultDenied, VaultError, VaultUnavailable
 from passguard.control.models import AuthView, ChangePasswordRequest, CreateUserRequest, LoginRequest, RotationRequest, UpdateUserRequest, UserListView, UserView
+from passguard.control.models import ScanListView, ScanReportView
 from passguard.control.repository import ControlError, ControlRepository, Identity
 from passguard.control.security import COOKIE_NAME, COOKIE_PATH, SecuritySettings, valid_csrf
+from passguard.scanner.client import ScannerClient
+from passguard.scanner.errors import ScanError, failure
+from passguard.scanner.upload import read_archive
 
 
-def create_app(repository=None, vault=None, security: SecuritySettings | None = None, probe=None) -> FastAPI:
+def create_app(repository=None, vault=None, security: SecuritySettings | None = None, probe=None, scanner=None) -> FastAPI:
     security = security or SecuritySettings.from_env()
+    scan_lock = Lock()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -31,6 +38,7 @@ def create_app(repository=None, vault=None, security: SecuritySettings | None = 
             app.state.repository = ControlRepository(settings, owned_vault)
         else:
             app.state.repository, app.state.vault = repository, vault
+        app.state.scanner = scanner or ScannerClient()
         with httpx.Client(base_url=os.getenv("DEMO_URL", "http://demo:8001"), timeout=8, trust_env=False) as demo:
             def default_probe():
                 try:
@@ -44,8 +52,10 @@ def create_app(repository=None, vault=None, security: SecuritySettings | None = 
             finally:
                 if owned_vault:
                     owned_vault.close()
+                if scanner is None:
+                    app.state.scanner.close()
 
-    app = FastAPI(title="PassGuard — управляющий API", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="PassGuard — управляющий API", version="0.3.0", lifespan=lifespan)
 
     @app.middleware("http")
     async def browser_protection(request: Request, call_next):
@@ -65,6 +75,10 @@ def create_app(repository=None, vault=None, security: SecuritySettings | None = 
 
     @app.exception_handler(ControlError)
     async def control_error(_: Request, error: ControlError):
+        return JSONResponse(status_code=error.status, content={"detail": error.detail, "code": error.code})
+
+    @app.exception_handler(ScanError)
+    async def scan_error(_: Request, error: ScanError):
         return JSONResponse(status_code=error.status, content={"detail": error.detail, "code": error.code})
 
     @app.exception_handler(DatabaseUnavailable)
@@ -193,6 +207,34 @@ def create_app(repository=None, vault=None, security: SecuritySettings | None = 
     @app.get(prefix + "/operations/{operation_id}", summary="Проверить результат операции")
     def operation(operation_id: UUID, request: Request, _: Annotated[Identity, Depends(auditors)]):
         return request.app.state.repository.operation(operation_id)
+
+    @app.post(prefix + "/scans", status_code=201, response_model=ScanReportView, summary="Проверить ZIP с исходниками",
+              openapi_extra={"requestBody": {"required": True, "content": {
+                  "application/zip": {"schema": {"type": "string", "format": "binary"}}
+              }}})
+    async def create_scan(request: Request, identity: Annotated[Identity, Depends(operators)]):
+        if not scan_lock.acquire(blocking=False):
+            raise failure("scanner_busy")
+        repo = request.app.state.repository
+        try:
+            archive = await read_archive(request)
+            await run_in_threadpool(repo.audit, identity.user, "scans.create", "started")
+            result = await run_in_threadpool(request.app.state.scanner.scan, archive)
+            return await run_in_threadpool(repo.save_scan, identity, result)
+        except ScanError as error:
+            await run_in_threadpool(repo.audit, identity.user, "scans.create", "failed", {"code": error.code})
+            raise
+        finally:
+            scan_lock.release()
+
+    @app.get(prefix + "/scans", response_model=ScanListView, summary="Список отчётов сканирования")
+    def scans(request: Request, _: Annotated[Identity, Depends(any_user)],
+              limit: Annotated[int, Query(ge=1, le=100)] = 50, offset: Annotated[int, Query(ge=0, le=100000)] = 0):
+        return {"items": request.app.state.repository.scans(limit, offset)}
+
+    @app.get(prefix + "/scans/{scan_id}", response_model=ScanReportView, summary="Очищенный отчёт сканирования")
+    def scan_report(scan_id: UUID, request: Request, _: Annotated[Identity, Depends(any_user)]):
+        return request.app.state.repository.scan_report(scan_id)
 
     return app
 
