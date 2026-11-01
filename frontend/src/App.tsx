@@ -63,7 +63,7 @@ function Login() {
       <div className="login-form-wrap"><div className="login-icon"><KeyRound size={25} strokeWidth={1.6} /></div><div className="eyebrow">ДОБРО ПОЖАЛОВАТЬ</div><h2>Вход в PassGuard</h2><p className="muted">Войдите, чтобы управлять секретами и проверками.</p>
         {loginMessage && <Alert tone="info">{loginMessage}</Alert>}{error && <Alert>{error}</Alert>}
         <form onSubmit={login} className="form-stack">
-          <label>Логин<input name="username" autoComplete="username" minLength={3} maxLength={64} pattern="[a-zA-Z0-9][a-zA-Z0-9_.-]*" placeholder="Ваш логин" required autoFocus /></label>
+          <label>Логин<input name="username" autoComplete="username" minLength={3} maxLength={64} pattern={'[a-zA-Z0-9][a-zA-Z0-9_.\\-]*'} placeholder="Ваш логин" required autoFocus /></label>
           <label>Пароль<PasswordInput name="password" autoComplete="current-password" maxLength={128} placeholder="Введите пароль" required /></label>
           <Button type="submit" busy={busy} className="login-submit">Войти в панель{!busy && <ArrowRight size={18} />}</Button>
         </form>
