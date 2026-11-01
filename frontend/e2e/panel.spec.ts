@@ -1,12 +1,11 @@
 import { test, expect, request } from '@playwright/test';
 import type { APIRequestContext, Page } from '@playwright/test';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
 const prefix = '/api/control';
-const stateDirectory = process.env.PASSGUARD_STATE_DIR || resolve('..', '.local');
 const checks: Record<string, boolean> = {};
 const users: Record<string, { id: string; username: string; password: string }> = {};
 const created: string[] = [];
@@ -30,7 +29,15 @@ async function login(page: Page, role: string) {
 // bootstrap administrator's password; all browser accounts are disabled after.
 test.describe.configure({ mode: 'serial' });
 test.beforeAll(async ({ baseURL }) => {
-  const initial = JSON.parse(await readFile(resolve(stateDirectory, 'operator/control-admin.json'), 'utf8'));
+  // Operator files stay root-owned/0600. Read inside the existing tools
+  // container and capture stdout in memory; never chmod or log credentials.
+  let initial: { username: string; password: string };
+  try {
+    const content = execFileSync('docker', ['compose', 'run', '--rm', '-T', '--no-deps', 'tools', 'python', '-c',
+      'import json;from scripts.common import state_dir;x=json.loads((state_dir()/"operator/control-admin.json").read_text());print(json.dumps({k:x[k] for k in ("username","password")}))'],
+      { cwd: resolve('..'), encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+    initial = JSON.parse(content);
+  } catch { throw new Error('Could not read test login through the operator container'); }
   admin = await request.newContext({ baseURL });
   const response = await admin.post(prefix + '/auth/login', { data: { username: initial.username, password: initial.password } });
   requireStatus(response.status(), 200); adminCsrf = (await response.json()).csrf_token;

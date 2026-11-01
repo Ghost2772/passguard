@@ -96,7 +96,7 @@ function Workspace() {
       <div className="workspace-label"><span className="workspace-initial">P</span><div><strong>Рабочее пространство</strong><span>Учебный стенд</span></div></div>
       <div className="nav-caption">УПРАВЛЕНИЕ</div><nav aria-label={mobile ? 'Мобильная навигация' : 'Основная навигация'}>{allowed.map(({ id, label, icon: Icon }) =>
         <a href={`#/${id}`} key={id} className={route.page === id ? 'nav-link active' : 'nav-link'} aria-current={route.page === id ? 'page' : undefined} onClick={() => menu.current?.close()}><Icon size={19} strokeWidth={1.6} /><span>{label}</span>{route.page === id && <span className="nav-active-dot" />}</a>)}</nav>
-      <div className="sidebar-bottom"><div className="sidebar-security"><ShieldCheck size={23} /><strong>Каждому — свои права</strong><p>Доступ к секретам и действиям разделён по ролям.</p></div><a href="#/account" className={`nav-link ${route.page === 'account' ? 'active' : ''}`} aria-current={route.page === 'account' ? 'page' : undefined}><Settings2 size={19} strokeWidth={1.6} /><span>Мой аккаунт</span></a><div className="sidebar-version">PASSGUARD <span>v0.4</span></div></div>
+      <div className="sidebar-bottom"><div className="sidebar-security"><ShieldCheck size={23} /><strong>Каждому — свои права</strong><p>Доступ к секретам и действиям разделён по ролям.</p></div><a href="#/account" className={`nav-link ${route.page === 'account' ? 'active' : ''}`} aria-current={route.page === 'account' ? 'page' : undefined} onClick={() => menu.current?.close()}><Settings2 size={19} strokeWidth={1.6} /><span>Мой аккаунт</span></a><div className="sidebar-version">PASSGUARD <span>v0.4</span></div></div>
     </>;
   }
   return <div className="app-layout">

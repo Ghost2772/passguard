@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, ArrowUpRight, ChevronLeft, ChevronRight, Download, FileArchive, FileCheck2, FileSearch, FolderOpen, RefreshCw, Search, ShieldAlert, Upload, X } from 'lucide-react';
 import { errorMessage } from '../api';
 import { useAuth } from '../auth';
@@ -54,23 +54,27 @@ function ScanList() {
   const [error, setError] = useState('');
   const input = useRef<HTMLInputElement>(null);
   const inFlight = useRef(false);
+  const upload = useRef<AbortController | null>(null);
+  useEffect(() => () => upload.current?.abort(), []);
   const canRun = user!.role !== 'auditor';
   function choose(file?: File) {
     setError('');
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.zip')) { setError('Выберите архив в формате ZIP.'); return; }
-    if (file.size > MAX_UPLOAD) { setError('Архив должен быть не больше 5 МиБ.'); return; }
+    if (!file.name.toLowerCase().endsWith('.zip')) { setFile(null); setError('Выберите архив в формате ZIP.'); return; }
+    if (file.size > MAX_UPLOAD) { setFile(null); setError('Архив должен быть не больше 5 МиБ.'); return; }
     setFile(file);
   }
   async function scan() {
     if (!file || inFlight.current) return;
     inFlight.current = true; setBusy(true); setError('');
+    const controller = new AbortController(); upload.current = controller;
     try {
-      const report = await api.request<ScanReport>('/scans', { method: 'POST', body: file, timeout: 55000 });
+      const report = await api.request<ScanReport>('/scans', { method: 'POST', body: file, timeout: 55000, signal: controller.signal });
+      if (controller.signal.aborted) return;
       setFile(null); if (input.current) input.current.value = '';
       notify('Проверка исходников завершена.'); window.location.hash = '/scans/' + report.id;
-    } catch (error) { setError(`${errorMessage(error)} Если ответ потерян, обновите список результатов перед повторным запуском.`); }
-    finally { inFlight.current = false; setBusy(false); }
+    } catch (error) { if (!controller.signal.aborted) setError(`${errorMessage(error)} Если ответ потерян, обновите список результатов перед повторным запуском.`); }
+    finally { inFlight.current = false; if (!controller.signal.aborted) setBusy(false); }
   }
   return <><PageTitle eyebrow="ПОИСК ВОЗМОЖНЫХ УТЕЧЕК" title="Проверка исходников" action={<Button variant="secondary" busy={state.loading} onClick={state.reload}><RefreshCw size={16} />Обновить</Button>}>Находите пароли, токены и ключи до публикации кода.</PageTitle>
     {canRun ? <section className="card upload-card"><div className="upload-info"><div className="section-kicker">НОВАЯ ПРОВЕРКА</div><h2>Дайте коду ещё одну проверку.</h2><p>Загрузите ZIP с исходниками. Мы проверим текстовые файлы и покажем места возможных утечек.</p><div className="upload-spec"><span><FileArchive size={15} /> ZIP до 5 МиБ</span><span>До 1000 файлов · UTF-8</span></div><p className="form-hint">Подготовьте архив без .git, .local, .venv и node_modules.</p></div><div className="upload-control">
