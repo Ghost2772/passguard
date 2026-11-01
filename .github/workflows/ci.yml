@@ -36,6 +36,8 @@ jobs:
         run: docker compose run --rm tools python -m scripts.bootstrap
       - name: Start demo application
         run: docker compose up -d --wait demo
+      - name: Check API through the published host port
+        run: curl --fail --silent --show-error --noproxy "*" --connect-timeout 5 --max-time 20 http://127.0.0.1:8001/ready
       - name: Prove credential rotation and permission restrictions
         run: docker compose run --rm tools python -m scripts.verify_rotation
       - name: Restart Vault with its existing storage

@@ -82,7 +82,9 @@ services:
       interval: 5s
       timeout: 12s
       retries: 15
-    networks: [backend]
+    # Published host ports require a non-internal gateway network.
+    # PostgreSQL and Vault communicate with the app through backend.
+    networks: [web, backend]
     security_opt: [no-new-privileges:true]
     cap_drop: [ALL]
     read_only: true
@@ -134,5 +136,7 @@ volumes:
   vault_audit:
 
 networks:
+  web:
+    driver: bridge
   backend:
     internal: true
